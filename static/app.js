@@ -130,6 +130,31 @@ async function loadCompanyDetail(id) {
             ` : ''}
 
             <div class="mb-6">
+                <h3 class="text-lg font-semibold mb-3">Upload Materials</h3>
+                <div class="bg-white rounded-lg shadow p-4">
+                    <form id="materials-form" onsubmit="return false;">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Scenario PDF <span class="text-red-500">*</span></label>
+                                <input type="file" accept=".pdf" id="mat-scenario" class="block w-full text-sm text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Thesis PDF</label>
+                                <input type="file" accept=".pdf" id="mat-thesis" class="block w-full text-sm text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Model XLSX</label>
+                                <input type="file" accept=".xlsx,.xls" id="mat-model" class="block w-full text-sm text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100">
+                            </div>
+                        </div>
+                        <button onclick="uploadMaterials(${id})" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium">Upload</button>
+                    </form>
+                    <div id="materials-status" class="mt-3 hidden"></div>
+                    <div id="materials-results" class="mt-4 hidden"></div>
+                </div>
+            </div>
+
+            <div class="mb-6">
                 <h3 class="text-lg font-semibold mb-3">Scenarios</h3>
                 ${c.scenarios.length ? `
                     <div class="bg-white rounded-lg shadow overflow-hidden">
@@ -201,6 +226,131 @@ async function loadCompanyDetail(id) {
 async function acknowledgeAlert(alertId, companyId) {
     await fetch(`/api/alerts/${alertId}/acknowledge`, { method: 'PUT' });
     loadCompanyDetail(companyId);
+}
+
+async function uploadMaterials(companyId) {
+    const scenarioFile = document.getElementById('mat-scenario').files[0];
+    if (!scenarioFile) { alert('Scenario PDF is required.'); return; }
+
+    const statusDiv = document.getElementById('materials-status');
+    const resultsDiv = document.getElementById('materials-results');
+    statusDiv.className = 'mt-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-800';
+    statusDiv.textContent = 'Uploading and processing...';
+    resultsDiv.classList.add('hidden');
+
+    const formData = new FormData();
+    formData.append('scenario_pdf', scenarioFile);
+    const thesisFile = document.getElementById('mat-thesis').files[0];
+    if (thesisFile) formData.append('thesis_pdf', thesisFile);
+    const modelFile = document.getElementById('mat-model').files[0];
+    if (modelFile) formData.append('model_xlsx', modelFile);
+
+    try {
+        const resp = await fetch(`/api/companies/${companyId}/materials`, { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.detail) {
+            statusDiv.className = 'mt-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-800';
+            statusDiv.textContent = data.detail;
+            return;
+        }
+
+        statusDiv.className = 'mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-sm text-green-800';
+        statusDiv.textContent = `Files saved: ${data.files_saved.join(', ')}`;
+
+        let html = '';
+
+        if (data.indicators_updated.length) {
+            html += `<div class="mb-3"><h4 class="font-medium text-sm text-gray-700 mb-1">Updated Indicators (${data.indicators_updated.length})</h4>
+                <ul class="text-sm text-gray-600 list-disc ml-5">${data.indicators_updated.map(u =>
+                    `<li>${esc(u.name)}: ${Object.entries(u.changes).map(([k,v]) => `${k}=${esc(v)}`).join(', ')}</li>`
+                ).join('')}</ul></div>`;
+        }
+
+        if (data.new_indicators.length) {
+            window._pendingNewIndicators = data.new_indicators;
+            window._pendingCompanyId = companyId;
+            html += `<div class="mb-3"><h4 class="font-medium text-sm text-amber-700 mb-1">New Indicators Found (${data.new_indicators.length}) — review and confirm</h4>
+                <table class="w-full text-sm border rounded"><thead class="bg-gray-50"><tr>
+                    <th class="px-2 py-1 text-left"><input type="checkbox" checked onchange="toggleAllNewInd(this)"></th>
+                    <th class="px-2 py-1 text-left">Name</th><th class="px-2 py-1 text-left">Bear</th>
+                    <th class="px-2 py-1 text-left">Bull</th><th class="px-2 py-1 text-left">Freq</th>
+                    <th class="px-2 py-1 text-left">Source</th></tr></thead>
+                <tbody>${data.new_indicators.map((ind, i) => `<tr>
+                    <td class="px-2 py-1"><input type="checkbox" checked class="new-ind-check" data-idx="${i}"></td>
+                    <td class="px-2 py-1">${esc(ind.name)}</td>
+                    <td class="px-2 py-1 text-red-600">${esc(ind.bear_threshold || '—')}</td>
+                    <td class="px-2 py-1 text-green-600">${esc(ind.bull_threshold || '—')}</td>
+                    <td class="px-2 py-1">${esc(ind.check_frequency)}</td>
+                    <td class="px-2 py-1">${esc(ind.data_source)}</td></tr>`).join('')}</tbody></table>
+                <button onclick="confirmNewIndicators()" class="mt-2 bg-green-600 text-white px-4 py-1.5 rounded hover:bg-green-700 text-sm font-medium">Confirm New Indicators</button></div>`;
+        }
+
+        if (data.possibly_removed.length) {
+            html += `<div class="mb-3"><h4 class="font-medium text-sm text-red-700 mb-1">Possibly Removed (${data.possibly_removed.length})</h4>
+                <ul class="text-sm text-gray-600 list-disc ml-5">${data.possibly_removed.map(r =>
+                    `<li>${esc(r.name)} (status: ${r.status})</li>`
+                ).join('')}</ul>
+                <p class="text-xs text-gray-500 mt-1">These indicators are in the database but were not found in the PDF. No action taken.</p></div>`;
+        }
+
+        if (data.extraction_errors.length) {
+            html += `<div class="mb-3"><h4 class="font-medium text-sm text-red-700 mb-1">Extraction Errors</h4>
+                <ul class="text-sm text-red-600 list-disc ml-5">${data.extraction_errors.map(e =>
+                    `<li>${esc(e)}</li>`
+                ).join('')}</ul></div>`;
+        }
+
+        if (!html) html = '<p class="text-sm text-gray-500">No indicator changes detected.</p>';
+
+        resultsDiv.innerHTML = html;
+        resultsDiv.classList.remove('hidden');
+
+        if (data.indicators_updated.length) loadCompanyDetail(companyId);
+    } catch (err) {
+        statusDiv.className = 'mt-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-800';
+        statusDiv.textContent = 'Upload failed: ' + err.message;
+    }
+}
+
+function toggleAllNewInd(master) {
+    document.querySelectorAll('.new-ind-check').forEach(cb => cb.checked = master.checked);
+}
+
+async function confirmNewIndicators() {
+    if (!window._pendingNewIndicators || !window._pendingCompanyId) return;
+    const checks = document.querySelectorAll('.new-ind-check');
+    const selected = [];
+    checks.forEach(cb => {
+        if (cb.checked) selected.push(window._pendingNewIndicators[parseInt(cb.dataset.idx)]);
+    });
+    if (!selected.length) { alert('No indicators selected.'); return; }
+
+    const indicators = selected.map(ind => ({
+        name: ind.name,
+        current_value: ind.current_value || null,
+        bear_threshold: ind.bear_threshold || null,
+        bull_threshold: ind.bull_threshold || null,
+        check_frequency: ind.check_frequency || 'Monthly',
+        data_source: ind.data_source || 'Unknown',
+        added_from: ind.added_from || 'scenario_pdf',
+    }));
+
+    try {
+        const resp = await fetch(`/api/companies/${window._pendingCompanyId}/materials/confirm-new`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ indicators }),
+        });
+        const data = await resp.json();
+        const statusDiv = document.getElementById('materials-status');
+        statusDiv.className = 'mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-sm text-green-800';
+        statusDiv.textContent = data.message;
+        document.getElementById('materials-results').classList.add('hidden');
+        window._pendingNewIndicators = null;
+        loadCompanyDetail(window._pendingCompanyId);
+    } catch (err) {
+        alert('Failed to confirm indicators: ' + err.message);
+    }
 }
 
 // ========== Onboarding ==========

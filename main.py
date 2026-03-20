@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 load_dotenv()
 
 from database import init_db
-from routers import companies, indicators, alerts, dashboard, checks, sweep_import
+from routers import companies, indicators, alerts, dashboard, checks, sweep_import, materials
 
 app = FastAPI(title="Coverage Monitoring App", version="0.1.0")
 
@@ -26,6 +26,7 @@ app.include_router(alerts.router)
 app.include_router(dashboard.router)
 app.include_router(checks.router)
 app.include_router(sweep_import.router)
+app.include_router(materials.router)
 
 
 @app.on_event("startup")
