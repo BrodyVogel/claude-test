@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onboard Company — Coverage Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <h1 class="text-xl font-bold text-gray-800">Coverage Monitor</h1>
+        <div class="flex gap-4">
+            <a href="/" class="text-gray-600 hover:text-blue-600">Dashboard</a>
+            <a href="/onboard" class="text-blue-600 font-medium">+ Onboard Company</a>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto px-6 py-8">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">Onboard New Company</h2>
+
+        <!-- Step indicators -->
+        <div class="flex items-center mb-8 gap-2">
+            <button onclick="goToStep(1)" id="step-btn-1" class="step-btn active px-4 py-2 rounded-full text-sm font-medium bg-blue-600 text-white">1. Basics</button>
+            <div class="w-8 h-px bg-gray-300"></div>
+            <button onclick="goToStep(2)" id="step-btn-2" class="step-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-200 text-gray-600">2. Scenarios</button>
+            <div class="w-8 h-px bg-gray-300"></div>
+            <button onclick="goToStep(3)" id="step-btn-3" class="step-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-200 text-gray-600">3. PDF Upload</button>
+            <div class="w-8 h-px bg-gray-300"></div>
+            <button onclick="goToStep(4)" id="step-btn-4" class="step-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-200 text-gray-600">4. Indicators</button>
+            <div class="w-8 h-px bg-gray-300"></div>
+            <button onclick="goToStep(5)" id="step-btn-5" class="step-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-200 text-gray-600">5. Review</button>
+        </div>
+
+        <!-- Step 1: Company Basics -->
+        <div id="step-1" class="step-panel">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold mb-4">Company Basics</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
+                        <input type="text" id="company-name" class="w-full border rounded-lg px-3 py-2" placeholder="James Hardie Industries">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Ticker *</label>
+                        <input type="text" id="company-ticker" class="w-full border rounded-lg px-3 py-2" placeholder="JHX">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Exchange</label>
+                        <input type="text" id="company-exchange" class="w-full border rounded-lg px-3 py-2" placeholder="ASX">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Currency *</label>
+                        <select id="company-currency" class="w-full border rounded-lg px-3 py-2">
+                            <option value="USD">USD</option>
+                            <option value="JPY">JPY</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                            <option value="AUD">AUD</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Current Rating *</label>
+                        <select id="company-rating" class="w-full border rounded-lg px-3 py-2">
+                            <option value="Strong Buy">Strong Buy</option>
+                            <option value="Outperform">Outperform</option>
+                            <option value="Inline" selected>Inline</option>
+                            <option value="Underperform">Underperform</option>
+                            <option value="Sell">Sell</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Current Price</label>
+                        <input type="number" step="0.01" id="company-price" class="w-full border rounded-lg px-3 py-2" placeholder="19.59">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Blended Price Target *</label>
+                        <input type="number" step="0.01" id="company-target" class="w-full border rounded-lg px-3 py-2" placeholder="23.88">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea id="company-notes" class="w-full border rounded-lg px-3 py-2" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end mt-6">
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Next: Scenarios</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Scenarios -->
+        <div id="step-2" class="step-panel hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Scenarios</h3>
+                    <button onclick="addScenarioRow()" class="text-blue-600 hover:text-blue-700 text-sm font-medium">+ Add Another Scenario</button>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">Enter probability-weighted scenarios. Raw weights should sum to 100% (or less if there's a residual). Effective weights must sum to 100%.</p>
+                <div id="scenarios-container">
+                    <!-- Scenario rows added by JS -->
+                </div>
+                <div class="flex justify-between mt-6">
+                    <button onclick="prevStep()" class="text-gray-600 hover:text-gray-800 px-6 py-2">Back</button>
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Next: PDF Upload</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: PDF Upload -->
+        <div id="step-3" class="step-panel hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold mb-4">Upload Step 7b PDF (Optional)</h3>
+                <p class="text-sm text-gray-500 mb-4">Upload your Scenario Analysis PDF to auto-extract the Monitoring Framework table. You can always add indicators manually in the next step.</p>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center" id="upload-zone">
+                    <input type="file" id="pdf-file" accept=".pdf" class="hidden" onchange="handlePdfUpload()">
+                    <button onclick="document.getElementById('pdf-file').click()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200">Choose PDF File</button>
+                    <p class="text-sm text-gray-400 mt-2" id="upload-status">No file selected</p>
+                </div>
+                <div id="extracted-data" class="mt-6 hidden">
+                    <h4 class="font-medium text-gray-700 mb-2">Extracted Indicators</h4>
+                    <p class="text-sm text-amber-600 mb-2">Review and edit extracted data before confirming. PDF extraction may be imperfect.</p>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm" id="extracted-table">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-2 py-1 text-left">Include</th>
+                                    <th class="px-2 py-1 text-left">Indicator</th>
+                                    <th class="px-2 py-1 text-left">Current</th>
+                                    <th class="px-2 py-1 text-left">Bear Thr.</th>
+                                    <th class="px-2 py-1 text-left">Bull Thr.</th>
+                                    <th class="px-2 py-1 text-left">Freq.</th>
+                                    <th class="px-2 py-1 text-left">Source</th>
+                                </tr>
+                            </thead>
+                            <tbody id="extracted-body"></tbody>
+                        </table>
+                    </div>
+                    <button onclick="confirmExtracted()" class="mt-3 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">Confirm & Add to Indicators</button>
+                </div>
+                <div class="flex justify-between mt-6">
+                    <button onclick="prevStep()" class="text-gray-600 hover:text-gray-800 px-6 py-2">Back</button>
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Next: Indicators</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Manual Indicators -->
+        <div id="step-4" class="step-panel hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Indicators</h3>
+                    <button onclick="addIndicatorRow()" class="text-blue-600 hover:text-blue-700 text-sm font-medium">+ Add Indicator</button>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">Add or edit indicators for this company's monitoring framework.</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-2 py-1 text-left">Indicator Name</th>
+                                <th class="px-2 py-1 text-left">Current Value</th>
+                                <th class="px-2 py-1 text-left">Bear Threshold</th>
+                                <th class="px-2 py-1 text-left">Bull Threshold</th>
+                                <th class="px-2 py-1 text-left">Frequency</th>
+                                <th class="px-2 py-1 text-left">Source</th>
+                                <th class="px-2 py-1 text-left">Added From</th>
+                                <th class="px-2 py-1"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="indicators-body"></tbody>
+                    </table>
+                </div>
+                <div class="flex justify-between mt-6">
+                    <button onclick="prevStep()" class="text-gray-600 hover:text-gray-800 px-6 py-2">Back</button>
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Next: Review</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Review -->
+        <div id="step-5" class="step-panel hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold mb-4">Review & Confirm</h3>
+                <div id="review-content"></div>
+                <div id="save-error" class="hidden mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm"></div>
+                <div class="flex justify-between mt-6">
+                    <button onclick="prevStep()" class="text-gray-600 hover:text-gray-800 px-6 py-2">Back</button>
+                    <button onclick="submitOnboarding()" id="submit-btn" class="bg-green-600 text-white px-8 py-2 rounded-lg hover:bg-green-700 font-medium">Save Company</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+    <script>
+        initOnboarding();
+    </script>
+</body>
+</html>

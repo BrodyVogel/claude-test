@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+aiosqlite
+pdfplumber
+python-multipart
+jinja2
