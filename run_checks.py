@@ -1,101 +1,71 @@
-"""CLI script to run indicator checks and price updates. Can be called from cron."""
+"""CLI script to import a sweep JSON file into the coverage monitor.
 
-import asyncio
-import logging
-import os
+Usage:
+    python run_checks.py sweep_data.json
+
+Posts the JSON file to http://localhost:8000/api/import/sweep
+"""
+
+import json
 import sys
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-)
-logger = logging.getLogger('run_checks')
+import urllib.request
+import urllib.error
 
 
-async def main():
-    import aiosqlite
-    from database import DB_PATH, init_db
-    from services.indicator_checker import run_batch_checks
-    from services.price_tracker import update_all_prices
-
-    # Verify API key
-    api_key = os.getenv('ANTHROPIC_API_KEY')
-    if not api_key:
-        logger.error("ANTHROPIC_API_KEY not set. Create a .env file with your key.")
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python run_checks.py <sweep_json_file>")
+        print("  Posts the JSON file to http://localhost:8000/api/import/sweep")
         sys.exit(1)
 
-    await init_db()
+    filepath = sys.argv[1]
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys=ON")
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: File not found: {filepath}")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in {filepath}: {e}")
+        sys.exit(1)
 
-        # Parse CLI args
-        mode = sys.argv[1] if len(sys.argv) > 1 else 'all'
-        company_id = None
-        if len(sys.argv) > 2:
-            try:
-                company_id = int(sys.argv[2])
-            except ValueError:
-                pass
+    url = "http://localhost:8000/api/import/sweep"
+    payload = json.dumps(data).encode('utf-8')
 
-        if mode in ('all', 'indicators'):
-            logger.info("=" * 60)
-            logger.info("RUNNING INDICATOR CHECKS")
-            logger.info("=" * 60)
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
 
-            budget = int(os.getenv('DAILY_CHECK_BUDGET', '50'))
-            result = await run_batch_checks(db, company_id=company_id, budget=budget)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.URLError as e:
+        print(f"Error: Could not connect to {url}: {e}")
+        print("Make sure the server is running (uvicorn main:app)")
+        sys.exit(1)
 
-            logger.info("Checked: %d | Errors: %d | Status changes: %d",
-                        result['checked'], result['errors'], result['status_changes'])
+    summary = result.get("summary", {})
+    print(f"Sweep date: {result.get('sweep_date', '?')}")
+    print(f"Companies processed: {summary.get('companies_processed', 0)}")
+    print(f"Indicators updated: {summary.get('indicators_updated', 0)}")
+    print(f"Status changes: {summary.get('status_changes', 0)}")
 
-            for r in result['results']:
-                status_icon = {'checked': 'OK', 'error': 'ERR'}.get(r['status'], '??')
-                changed = ' [CHANGED]' if r.get('changed') else ''
-                logger.info("  [%s] %s — %s: %s%s",
-                            status_icon,
-                            r.get('company_name', ''),
-                            r['indicator_name'],
-                            r.get('value', r.get('error', '?')),
-                            changed)
+    unmatched = summary.get("unmatched_indicators", [])
+    if unmatched:
+        print(f"\nUnmatched indicators ({len(unmatched)}):")
+        for u in unmatched:
+            print(f"  {u['ticker']}: {u['indicator_name']}")
 
-        if mode in ('all', 'prices'):
-            logger.info("=" * 60)
-            logger.info("UPDATING PRICES")
-            logger.info("=" * 60)
-
-            result = await update_all_prices(db)
-
-            logger.info("Updated: %d | Errors: %d", result['updated'], result['errors'])
-
-            for r in result['results']:
-                if r['status'] == 'updated':
-                    logger.info("  %s: %s → %s (upside: %s)",
-                                r['ticker'],
-                                r.get('old_price', '?'),
-                                r['new_price'],
-                                f"{r['upside']*100:.1f}%" if r.get('upside') is not None else '?')
-                else:
-                    logger.info("  %s: ERROR — %s", r['ticker'], r.get('error', '?'))
-
-        logger.info("Done.")
+    errors = summary.get("errors", [])
+    if errors:
+        print(f"\nErrors ({len(errors)}):")
+        for e in errors:
+            print(f"  {e}")
 
 
 if __name__ == '__main__':
-    print("""
-Coverage Monitor — Check Runner
-================================
-Usage:
-  python run_checks.py              # Run all checks (indicators + prices)
-  python run_checks.py indicators   # Run indicator checks only
-  python run_checks.py prices       # Run price updates only
-  python run_checks.py all [ID]     # Run all checks, optionally for one company
-""")
-    asyncio.run(main())
+    main()

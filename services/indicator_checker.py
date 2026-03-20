@@ -1,17 +1,15 @@
-"""Indicator checker service — uses Claude API with web search to check indicators."""
+"""Indicator checker service — parsing and status determination utilities.
+
+The API-based checking functions have been removed. Indicator data now comes
+via the sweep import endpoint (routers/sweep_import.py).
+"""
 
 import logging
-import os
 import re
-import time
 from datetime import datetime, timedelta
 from typing import Optional
 
 import aiosqlite
-import anthropic
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +26,6 @@ FREQUENCY_DAYS = {
 
 # Frequencies that are not auto-checked
 MANUAL_FREQUENCIES = {"once", "event", "pre-earnings"}
-
-
-def _get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic()
 
 
 def _is_check_due(last_checked_at: Optional[str], frequency: str) -> bool:
@@ -205,118 +199,6 @@ def determine_status(
     return 'green'
 
 
-def _parse_response(response_text: str) -> dict:
-    """Parse structured fields from Claude's response text."""
-    result = {
-        'value': None,
-        'date': None,
-        'source_url': None,
-        'confidence': None,
-        'context': None,
-    }
-
-    patterns = {
-        'value': r'VALUE:\s*(.+?)(?:\n|$)',
-        'date': r'DATE:\s*(.+?)(?:\n|$)',
-        'source_url': r'SOURCE_URL:\s*(.+?)(?:\n|$)',
-        'confidence': r'CONFIDENCE:\s*(.+?)(?:\n|$)',
-        'context': r'CONTEXT:\s*(.+?)(?:\n|$)',
-    }
-
-    for key, pattern in patterns.items():
-        match = re.search(pattern, response_text, re.IGNORECASE)
-        if match:
-            result[key] = match.group(1).strip()
-
-    return result
-
-
-def _extract_text_from_response(response) -> str:
-    """Extract all text content from an Anthropic API response."""
-    texts = []
-    for block in response.content:
-        if block.type == 'text':
-            texts.append(block.text)
-    return '\n'.join(texts)
-
-
-def check_single_indicator(
-    indicator: dict,
-    company: dict,
-) -> dict:
-    """Check a single indicator using Claude API with web search.
-
-    Returns a dict with: value_text, value_numeric, source_url, source_snippet,
-    status, confidence, raw_response, error
-    """
-    client = _get_client()
-
-    prompt = f"""Find the most recent value for this indicator:
-
-Indicator: {indicator['name']}
-Data source: {indicator['data_source']}
-Company context: {company['name']} ({company['ticker']})
-Previous value: {indicator.get('current_value', 'N/A')}
-Bear threshold: {indicator.get('bear_threshold', 'N/A')}
-Bull threshold: {indicator.get('bull_threshold', 'N/A')}
-
-Search for the most current data point from the specified data source. Return your answer in this exact format:
-
-VALUE: [the value you found]
-DATE: [the date of the data point, or "current" if it's a live/real-time value]
-SOURCE_URL: [the URL where you found this]
-CONFIDENCE: [high/medium/low — how confident you are this is the correct, current value]
-CONTEXT: [1-2 sentences of relevant context about the reading]
-"""
-
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        response_text = _extract_text_from_response(response)
-        parsed = _parse_response(response_text)
-
-        value_text = parsed['value'] or indicator.get('current_value', '')
-        value_numeric = parse_numeric_value(value_text)
-
-        return {
-            'value_text': value_text,
-            'value_numeric': value_numeric,
-            'source_url': parsed['source_url'],
-            'source_snippet': parsed['context'],
-            'confidence': parsed['confidence'],
-            'raw_response': response_text,
-            'error': None,
-        }
-
-    except anthropic.APIError as e:
-        logger.error("API error checking indicator %s: %s", indicator['name'], e)
-        return {
-            'value_text': None,
-            'value_numeric': None,
-            'source_url': None,
-            'source_snippet': None,
-            'confidence': None,
-            'raw_response': None,
-            'error': str(e),
-        }
-    except Exception as e:
-        logger.error("Unexpected error checking indicator %s: %s", indicator['name'], e)
-        return {
-            'value_text': None,
-            'value_numeric': None,
-            'source_url': None,
-            'source_snippet': None,
-            'confidence': None,
-            'raw_response': None,
-            'error': str(e),
-        }
-
-
 async def get_due_indicators(db: aiosqlite.Connection, budget: int = 50, company_id: Optional[int] = None) -> list[dict]:
     """Get indicators that are due for checking, respecting budget limits.
 
@@ -348,149 +230,3 @@ async def get_due_indicators(db: aiosqlite.Connection, budget: int = 50, company
             if len(due) >= budget:
                 break
     return due
-
-
-async def run_indicator_check(
-    db: aiosqlite.Connection,
-    indicator: dict,
-    company: dict,
-) -> dict:
-    """Run a single indicator check: API call, store reading, update status, generate alerts."""
-    now = datetime.utcnow().isoformat()
-
-    result = check_single_indicator(indicator, company)
-
-    if result['error']:
-        logger.warning("Check failed for %s: %s", indicator['name'], result['error'])
-        return {
-            'indicator_id': indicator['id'],
-            'indicator_name': indicator['name'],
-            'status': 'error',
-            'error': result['error'],
-        }
-
-    # Get historical readings for trending analysis
-    hist_rows = await db.execute_fetchall(
-        """SELECT value_text, value_numeric, checked_at
-           FROM indicator_readings
-           WHERE indicator_id = ?
-           ORDER BY checked_at DESC LIMIT 10""",
-        (indicator['id'],),
-    )
-    historical = [dict(r) for r in hist_rows]
-
-    # Determine status
-    new_status = determine_status(
-        result['value_numeric'],
-        indicator.get('bear_threshold', ''),
-        indicator.get('bull_threshold', ''),
-        historical,
-    )
-
-    # Store reading
-    await db.execute(
-        """INSERT INTO indicator_readings
-           (indicator_id, value_text, value_numeric, source_url, source_snippet, checked_at, status_at_reading, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            indicator['id'],
-            result['value_text'],
-            result['value_numeric'],
-            result['source_url'],
-            result['source_snippet'],
-            now,
-            new_status,
-            f"Confidence: {result['confidence']}" if result['confidence'] else None,
-        ),
-    )
-
-    # Update indicator
-    await db.execute(
-        """UPDATE indicators SET
-           current_value = ?, current_value_numeric = ?,
-           last_checked_at = ?, status = ?, updated_at = ?
-           WHERE id = ?""",
-        (
-            result['value_text'],
-            result['value_numeric'],
-            now,
-            new_status,
-            now,
-            indicator['id'],
-        ),
-    )
-
-    await db.commit()
-
-    old_status = indicator.get('status', 'green')
-    return {
-        'indicator_id': indicator['id'],
-        'indicator_name': indicator['name'],
-        'company_name': company.get('name', ''),
-        'status': 'checked',
-        'old_status': old_status,
-        'new_status': new_status,
-        'value': result['value_text'],
-        'source_url': result['source_url'],
-        'changed': old_status != new_status,
-    }
-
-
-async def run_batch_checks(
-    db: aiosqlite.Connection,
-    company_id: Optional[int] = None,
-    budget: Optional[int] = None,
-) -> dict:
-    """Run checks for all due indicators. Returns summary."""
-    if budget is None:
-        budget = int(os.getenv('DAILY_CHECK_BUDGET', '50'))
-
-    due_indicators = await get_due_indicators(db, budget=budget, company_id=company_id)
-
-    if not due_indicators:
-        return {
-            'checked': 0,
-            'skipped': 0,
-            'errors': 0,
-            'status_changes': 0,
-            'results': [],
-            'message': 'No indicators due for checking',
-        }
-
-    results = []
-    errors = 0
-    status_changes = 0
-
-    for ind in due_indicators:
-        company = {
-            'id': ind['company_id'],
-            'name': ind['company_name'],
-            'ticker': ind['company_ticker'],
-            'exchange': ind.get('company_exchange', ''),
-            'currency': ind.get('company_currency', ''),
-        }
-
-        logger.info("Checking: %s — %s", company['name'], ind['name'])
-        check_result = await run_indicator_check(db, ind, company)
-        results.append(check_result)
-
-        if check_result['status'] == 'error':
-            errors += 1
-        elif check_result.get('changed'):
-            status_changes += 1
-
-        # Rate limit: 2-second delay between API calls
-        if ind != due_indicators[-1]:
-            time.sleep(2)
-
-    # Run alert engine after all checks
-    from services.alert_engine import run_full_alert_check
-    await run_full_alert_check(db)
-
-    return {
-        'checked': len(results) - errors,
-        'errors': errors,
-        'status_changes': status_changes,
-        'results': results,
-        'message': f'Checked {len(results)} indicators ({errors} errors, {status_changes} status changes)',
-    }
