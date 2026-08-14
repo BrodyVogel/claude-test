@@ -4,5 +4,4 @@ aiosqlite
 pdfplumber
 python-multipart
 jinja2
-anthropic
 python-dotenv

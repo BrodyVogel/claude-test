@@ -19,8 +19,15 @@
     <main class="max-w-7xl mx-auto px-6 py-8">
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-2xl font-semibold text-gray-800">Morning Dashboard</h2>
-            <span id="last-updated" class="text-sm text-gray-500"></span>
+            <div class="flex items-center gap-3">
+                <span id="last-updated" class="text-sm text-gray-500"></span>
+                <label class="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 cursor-pointer text-sm font-medium">
+                    Import Sweep
+                    <input type="file" accept=".json" id="sweep-file" class="hidden" onchange="uploadSweep(this)">
+                </label>
+            </div>
         </div>
+        <div id="sweep-result" class="mb-6 hidden"></div>
 
         <!-- Alerts summary -->
         <div id="alerts-bar" class="mb-6 hidden">
@@ -65,6 +72,41 @@
     <script src="/static/app.js"></script>
     <script>
         loadDashboard();
+
+        async function uploadSweep(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const resultDiv = document.getElementById('sweep-result');
+            resultDiv.className = 'mb-6 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800';
+            resultDiv.textContent = 'Importing sweep data...';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const resp = await fetch('/api/import/sweep', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.error) {
+                    resultDiv.className = 'mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800';
+                    resultDiv.textContent = data.error;
+                } else {
+                    const s = data.summary;
+                    let msg = `Sweep imported: ${s.companies_processed} companies, ${s.indicators_updated} indicators updated, ${s.status_changes} status changes.`;
+                    if (s.unmatched_indicators && s.unmatched_indicators.length > 0) {
+                        msg += ` Unmatched: ${s.unmatched_indicators.map(u => u.ticker + '/' + u.indicator_name).join(', ')}.`;
+                    }
+                    if (s.errors && s.errors.length > 0) {
+                        msg += ` Errors: ${s.errors.join('; ')}`;
+                    }
+                    resultDiv.className = 'mb-6 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800';
+                    resultDiv.textContent = msg;
+                    loadDashboard();
+                }
+            } catch (err) {
+                resultDiv.className = 'mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800';
+                resultDiv.textContent = 'Upload failed: ' + err.message;
+            }
+            input.value = '';
+        }
     </script>
 </body>
 </html>

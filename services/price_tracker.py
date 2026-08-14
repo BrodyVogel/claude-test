@@ -1,3 +1,4 @@
+# DEPRECATED: Price updates now come via sweep import. This file is kept for reference.
 """Price tracking service — uses Claude API with web search to get current stock prices."""
 
 import logging
